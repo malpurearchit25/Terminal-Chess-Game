@@ -1,1 +1,813 @@
-import argparse\nimport os\nimport re\nimport time\nimport sys\nimport random\nimport math\n\nSIZE = 8\n\n# ─── ANSI COLORS ───────────────────────────────────────────────────────────────\nRESET   = "\033[0m"\nBOLD    = "\033[1m"\nDIM     = "\033[2m"\n\nBG_DARK      = "\033[48;2;101;67;33m"\nBG_LIGHT     = "\033[48;2;222;184;135m"\nBG_SELECTED  = "\033[48;2;240;200;50m"\nBG_VALID     = "\033[48;2;120;180;80m"\nBG_LASTMOVE  = "\033[48;2;170;210;100m"\nBG_CHECK     = "\033[48;2;200;50;50m"\nBG_CAPTURE   = "\033[48;2;200;100;50m"\n\nTXT_WHITE_PIECE = "\033[1;38;2;255;255;255m"\nTXT_BLACK_PIECE = "\033[1;38;2;28;14;4m"\n\nC_GOLD   = "\033[38;2;212;175;55m"\nC_WHITE  = "\033[97m"\nC_DIM    = "\033[2;37m"\nC_RED    = "\033[1;31m"\nC_GREEN  = "\033[1;32m"\nC_YELLOW = "\033[1;33m"\nC_CYAN   = "\033[1;36m"\nC_MAGENTA= "\033[1;35m"\nC_BLUE   = "\033[1;34m"\n\nFIREWORK_COLORS = [C_RED, C_YELLOW, C_GREEN, C_CYAN, C_MAGENTA, C_BLUE, C_WHITE]\nSPARKS = ['*', '+', '·', '✦', '✸', '✺', '❋', '✻', '★', '•', '◆', '▪']\n\nboard = [[0]*SIZE for _ in range(SIZE)]\ncastling_rights = {"K": True, "Q": True, "k": True, "q": True}\nen_passant_target = None\nSKIP_ANIMATIONS = False\n\nWHITE_SYMBOLS = {1:"♙", 2:"♖", 3:"♘", 4:"♗", 5:"♕", 6:"♔"}\nBLACK_SYMBOLS = {1:"♟", 2:"♜", 3:"♞", 4:"♝", 5:"♛", 6:"♚"}\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  BOARD SIZING  ← increase these to make squares bigger\n# ═══════════════════════════════════════════════════════════════════════════════\nSQ_W = 7    # total width  of each square in characters (must be odd for centring)\nSQ_H = 3    # total height of each square in lines      (must be odd for centring)\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  HELPERS\n# ═══════════════════════════════════════════════════════════════════════════════\ndef clear(): os.system("cls" if os.name == "nt" else "clear")\n\ndef hide_cursor(): sys.stdout.write("\033[?25l"); sys.stdout.flush()\ndef show_cursor(): sys.stdout.write("\033[?25h"); sys.stdout.flush()\n\ndef move_cursor(row, col):\n    sys.stdout.write(f"\033[{row};{col}H")\n    sys.stdout.flush()\n\ndef print_at(row, col, text):\n    move_cursor(row, col)\n    sys.stdout.write(text)\n    sys.stdout.flush()\n\ndef typewrite(text, delay=0.03, color=""):\n    for ch in text:\n        sys.stdout.write(color + ch + RESET)\n        sys.stdout.flush()\n        time.sleep(delay)\n\ndef get_terminal_size():\n    try:\n        size = os.get_terminal_size()\n        return size.lines, size.columns\n    except:\n        return 50, 100\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  WELCOME ANIMATION\n# ═══════════════════════════════════════════════════════════════════════════════\nTITLE_ART = r"""\n   ██████╗██╗  ██╗███████╗███████╗███████╗\n  ██╔════╝██║  ██║██╔════╝██╔════╝██╔════╝\n  ██║     ███████║█████╗  ███████╗███████╗\n  ██║     ██╔══██║██╔══╝  ╚════██║╚════██║\n  ╚██████╗██║  ██║███████╗███████║███████║\n   ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝\n"""\n\nCHESS_PIECES_ART = [\n    "    ♚  ♛  ♜  ♝  ♞  ♟    ",\n    "    ♔  ♕  ♖  ♗  ♘  ♙    ",\n]\n\ndef fade_in_title():\n    if SKIP_ANIMATIONS:\n        clear()\n        print(C_GOLD + BOLD + "CHESS" + RESET)\n        print(C_DIM + "The classic game of strategy" + RESET)\n        input(C_GOLD + "\nPress Enter to begin" + RESET)\n        return\n    lines = TITLE_ART.strip('\n').split('\n')\n    rows, cols = get_terminal_size()\n    start_col = max(1, (cols - 42) // 2)\n    start_row = max(1, (rows - 18) // 2)\n\n    hide_cursor()\n    clear()\n\n    for i, line in enumerate(lines):\n        print_at(start_row + i, start_col, C_DIM + line + RESET)\n    time.sleep(0.3)\n\n    gold_codes = [\n        "\033[38;2;100;80;20m",\n        "\033[38;2;150;120;30m",\n        "\033[38;2;190;155;40m",\n        "\033[38;2;212;175;55m",\n        "\033[38;2;240;210;100m",\n        "\033[38;2;255;240;160m",\n        "\033[38;2;212;175;55m",\n    ]\n\n    max_len = max(len(l) for l in lines)\n    for col_offset in range(max_len + len(gold_codes)):\n        for i, line in enumerate(lines):\n            row_out = []\n            for ci, ch in enumerate(line):\n                dist = col_offset - ci\n                if 0 <= dist < len(gold_codes):\n                    row_out.append(gold_codes[dist] + BOLD + ch + RESET)\n                elif dist >= len(gold_codes):\n                    row_out.append(C_GOLD + BOLD + ch + RESET)\n                else:\n                    row_out.append(C_DIM + ch + RESET)\n            print_at(start_row + i, start_col, ''.join(row_out))\n        time.sleep(0.018)\n\n    piece_row = start_row + len(lines) + 1\n    print_at(piece_row, start_col + 8, C_DIM + CHESS_PIECES_ART[1] + RESET)\n    time.sleep(0.2)\n\n    pieces = [("♔","♚"), ("♕","♛"), ("♖","♜"), ("♗","♝"), ("♘","♞"), ("♙","♟")]\n    base_col = start_col + 11\n    for idx, (wp, bp) in enumerate(pieces):\n        col = base_col + idx * 3\n        print_at(piece_row,     col, TXT_WHITE_PIECE + BOLD + wp + RESET)\n        print_at(piece_row + 1, col, TXT_BLACK_PIECE + BOLD + bp + RESET)\n        time.sleep(0.08)\n\n    time.sleep(0.4)\n\n    tagline = "— The Classic Game of Strategy —"\n    trow = piece_row + 3\n    tcol = max(1, (cols - len(tagline)) // 2)\n    print_at(trow, tcol, "")\n    typewrite(tagline, delay=0.04, color=C_DIM)\n\n    div = "─" * 44\n    drow = trow + 2\n    dcol = max(1, (cols - 44) // 2)\n    print_at(drow, dcol, C_GOLD + DIM + div + RESET)\n\n    time.sleep(0.3)\n    prompt_row = drow + 2\n    pcol = max(1, (cols - 28) // 2)\n    print_at(prompt_row, pcol, "")\n\n    for _ in range(6):\n        print_at(prompt_row, pcol, C_GOLD + "  Press  Enter  to  Begin  " + RESET)\n        time.sleep(0.4)\n        print_at(prompt_row, pcol, " " * 28)\n        time.sleep(0.3)\n\n    print_at(prompt_row, pcol, C_GOLD + "  Press  Enter  to  Begin  " + RESET)\n    print_at(prompt_row + 2, 1, "")\n    show_cursor()\n    input()\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  FIREWORKS ANIMATION\n# ═══════════════════════════════════════════════════════════════════════════════\nclass Particle:\n    def __init__(self, x, y, vx, vy, color, char, lifetime):\n        self.x  = x;  self.y  = y\n        self.vx = vx; self.vy = vy\n        self.color    = color\n        self.char     = char\n        self.lifetime = lifetime\n        self.age      = 0\n        self.px = x;  self.py = y\n\n    def update(self):\n        self.px, self.py = self.x, self.y\n        self.x  += self.vx\n        self.y  += self.vy * 0.5\n        self.vy += 0.25\n        self.vx *= 0.96\n        self.age += 1\n\n    def alive(self):\n        return self.age < self.lifetime\n\n    def brightness(self):\n        ratio = 1 - self.age / self.lifetime\n        if ratio > 0.7:   return BOLD\n        elif ratio > 0.4: return ""\n        else:             return DIM\n\ndef launch_firework(cx, cy, rows, cols):\n    particles = []\n    count = random.randint(20, 32)\n    color = random.choice(FIREWORK_COLORS)\n    color2 = random.choice(FIREWORK_COLORS)\n    for i in range(count):\n        angle = 2 * math.pi * i / count + random.uniform(-0.2, 0.2)\n        speed = random.uniform(1.2, 3.0)\n        vx = math.cos(angle) * speed\n        vy = math.sin(angle) * speed\n        ch = random.choice(SPARKS)\n        life = random.randint(8, 14)\n        c = color if i % 2 == 0 else color2\n        particles.append(Particle(cx, cy, vx, vy, c, ch, life))\n    return particles\n\ndef winner_animation(winner_name):\n    if SKIP_ANIMATIONS:\n        show_cursor()\n        print(f"\n{winner_name} wins by checkmate.")\n        return\n    hide_cursor()\n    rows, cols = get_terminal_size()\n\n    for color in [C_YELLOW, C_WHITE, C_GOLD, ""]:\n        clear()\n        if color:\n            for r in range(rows):\n                print(color + " " * cols + RESET)\n        time.sleep(0.06)\n\n    clear()\n\n    all_particles = []\n    launch_positions = [\n        (cols // 4,     rows // 4),\n        (3 * cols // 4, rows // 4),\n        (cols // 2,     rows // 5),\n        (cols // 3,     rows // 3),\n        (2 * cols // 3, rows // 3),\n    ]\n    launch_times = [0, 4, 8, 12, 16]\n    frame = 0\n    total_frames = 45\n\n    while frame < total_frames:\n        for i, lt in enumerate(launch_times):\n            if frame == lt and i < len(launch_positions):\n                cx, cy = launch_positions[i]\n                all_particles.extend(launch_firework(cx, cy, rows, cols))\n\n        if frame > 10 and frame % 7 == 0:\n            cx = random.randint(cols // 6, 5 * cols // 6)\n            cy = random.randint(rows // 6, rows // 2)\n            all_particles.extend(launch_firework(cx, cy, rows, cols))\n\n        for p in all_particles:\n            px, py = int(round(p.px)), int(round(p.py))\n            if 1 <= py <= rows and 1 <= px <= cols:\n                print_at(py, px, " ")\n\n        new_particles = []\n        for p in all_particles:\n            p.update()\n            if p.alive():\n                px, py = int(round(p.x)), int(round(p.y))\n                if 1 <= py <= rows - 4 and 1 <= px <= cols:\n                    print_at(py, px, p.brightness() + p.color + p.char + RESET)\n                new_particles.append(p)\n\n        all_particles = new_particles\n\n        if frame >= 6:\n            _draw_winner_text(rows, cols, winner_name, frame)\n\n        sys.stdout.flush()\n        time.sleep(0.07)\n        frame += 1\n\n    clear()\n    _draw_winner_text(rows, cols, winner_name, 99)\n    print_at(rows - 2, 1, "")\n    show_cursor()\n    input(C_DIM + "\n  Press Enter to exit..." + RESET)\n\ndef _draw_winner_text(rows, cols, winner_name, frame):\n    checkmate_art = [\n        "  ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███╗   ███╗ █████╗ ████████╗███████╗  ",\n        " ██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝████╗ ████║██╔══██╗╚══██╔══╝██╔════╝  ",\n        " ██║     ███████║█████╗  ██║     █████╔╝ ██╔████╔██║███████║   ██║   █████╗    ",\n        " ██║     ██╔══██║██╔══╝  ██║     ██╔═██╗ ██║╚██╔╝██║██╔══██║   ██║   ██╔══╝    ",\n        " ╚██████╗██║  ██║███████╗╚██████╗██║  ██╗██║ ╚═╝ ██║██║  ██║   ██║   ███████╗  ",\n        "  ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚══════╝  ",\n    ]\n    art_w     = max(len(l) for l in checkmate_art)\n    start_col = max(1, (cols - art_w) // 2)\n    mid_row   = rows // 2 - 5\n    golds = [\n        "\033[38;2;212;175;55m",\n        "\033[38;2;240;200;80m",\n        "\033[38;2;255;230;120m",\n        "\033[38;2;200;160;40m",\n    ]\n    g = golds[frame % len(golds)]\n    for i, line in enumerate(checkmate_art):\n        print_at(mid_row + i, start_col, g + BOLD + line + RESET)\n    win_text = f"♚  {winner_name.upper()} WINS  ♔"\n    wt_col   = max(1, (cols - len(win_text)) // 2)\n    print_at(mid_row + len(checkmate_art) + 2, wt_col, C_WHITE + BOLD + win_text + RESET)\n    sep = "·  " * 14\n    sc  = max(1, (cols - len(sep)) // 2)\n    print_at(mid_row + len(checkmate_art) + 4, sc, C_GOLD + DIM + sep + RESET)\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  STALEMATE ANIMATION\n# ═══════════════════════════════════════════════════════════════════════════════\ndef stalemate_animation():\n    if SKIP_ANIMATIONS:\n        show_cursor()\n        print("\nDraw by stalemate.")\n        return\n    hide_cursor()\n    rows, cols = get_terminal_size()\n    clear()\n\n    sub  = "The game is a draw"\n    art = [\n        " _____ _        _                     _       ",\n        "/  ___| |      | |                   | |      ",\n        r"\\ `--. | |_ __ | | ___ _ __ ___   __ _| |_ ___",\n        r" `--. \| __/ _` | |/ _ \ '_ ` _ \ / _` | __/ _ |",\n        r"/\__/ / || (_| | |  __/ | | | | | (_| | ||  __/",\n        r"\____/ \__\__,_|_|\___|_| |_| |_|\__,_|\__\___|",\n    ]\n\n    for frame in range(40):\n        offset  = max(0, 10 - frame)\n        mid_row = rows // 2 - 5\n        for i, line in enumerate(art):\n            sc    = max(1, (cols - len(line)) // 2)\n            alpha = min(1.0, (frame - i * 1.5) / 8)\n            if alpha <= 0:   continue\n            elif alpha < 0.4: color = C_DIM\n            elif alpha < 0.8: color = "\033[38;2;150;150;150m"\n            else:             color = "\033[38;2;200;200;200m" + BOLD\n            print_at(mid_row + i - offset, sc, color + line + RESET)\n\n        if frame > 15:\n            pc = max(1, (cols - 5) // 2)\n            if (frame // 4) % 2 == 0:\n                print_at(mid_row + len(art) + 2, pc,\n                         C_WHITE + BOLD + "♔" + RESET + "  " + TXT_BLACK_PIECE + BOLD + "♚" + RESET)\n            else:\n                print_at(mid_row + len(art) + 2, pc,\n                         C_DIM   + BOLD + "♔" + RESET + "  " + C_DIM + BOLD + "♚" + RESET)\n        if frame > 20:\n            sc2 = max(1, (cols - len(sub)) // 2)\n            print_at(mid_row + len(art) + 4, sc2, C_DIM + sub + RESET)\n\n        sys.stdout.flush()\n        time.sleep(0.07)\n\n    print_at(rows - 2, 1, "")\n    show_cursor()\n    input(C_DIM + "\n  Press Enter to exit..." + RESET)\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  BOARD / GAME LOGIC\n# ═══════════════════════════════════════════════════════════════════════════════\ndef initBoard():\n    global en_passant_target\n    castling_rights.update({"K": True, "Q": True, "k": True, "q": True})\n    en_passant_target = None\n    back = [2,3,4,5,6,4,3,2]\n    for i in range(SIZE):\n        for j in range(SIZE):\n            if   i == 0: board[i][j] = -back[j]\n            elif i == 1: board[i][j] = -1\n            elif i == 6: board[i][j] =  1\n            elif i == 7: board[i][j] =  back[j]\n            else:         board[i][j] =  0\n\ndef copyBoard(src):\n    return [row[:] for row in src]\n\ndef getPieceSymbol(p):\n    if p > 0: return WHITE_SYMBOLS.get(p, " ")\n    if p < 0: return BLACK_SYMBOLS.get(-p, " ")\n    return " "\n\n# ─── Larger board renderer ─────────────────────────────────────────────────────\ndef printBoard(selected=None, valid_moves=None, last_from=None, last_to=None, in_check_king=None):\n    valid_set   = set((r2, c2) for _, _, r2, c2 in (valid_moves or []))\n    capture_set = set()\n    if valid_moves:\n        for _, _, r2, c2 in valid_moves:\n            if board[r2][c2] != 0:\n                capture_set.add((r2, c2))\n\n    _, cols = get_terminal_size()\n\n    board_w = SIZE * SQ_W\n    label_w = 4          # " 8  " rank label\n    total_w = label_w + board_w + 2\n    pad     = max(0, (cols - total_w) // 2)\n    P       = " " * pad\n\n    # File labels — each centred in SQ_W chars\n    def file_label_row():\n        return P + " " * label_w + "".join(f"{c:^{SQ_W}}" for c in "ABCDEFGH")\n\n    top_rule = "─" * board_w\n\n    print()\n    print(C_GOLD + DIM + file_label_row() + RESET)\n    print(P + C_GOLD + DIM + " " * label_w + f"╔{top_rule}╗" + RESET)\n\n    for i in range(SIZE):\n        rank = str(8 - i)\n\n        # Build the SQ_H lines for this rank\n        for line_idx in range(SQ_H):\n            mid_line = (SQ_H // 2)  # centre line gets the piece\n\n            if line_idx == mid_line:\n                left_label  = C_GOLD + DIM + f" {rank:<2} ║" + RESET\n                right_label = C_GOLD + DIM + f"║ {rank}" + RESET\n            else:\n                left_label  = C_GOLD + DIM + "    ║" + RESET\n                right_label = C_GOLD + DIM + "║" + RESET\n\n            row_str = P + left_label\n\n            for j in range(SIZE):\n                sq = (i, j)\n                p  = board[i][j]\n\n                # Choose background\n                if selected and sq == (selected[0], selected[1]):\n                    bg = BG_SELECTED\n                elif sq in capture_set:\n                    bg = BG_CAPTURE\n                elif sq in valid_set:\n                    bg = BG_VALID\n                elif last_from and sq == (last_from[0], last_from[1]):\n                    bg = BG_LASTMOVE\n                elif last_to and sq == (last_to[0], last_to[1]):\n                    bg = BG_LASTMOVE\n                elif in_check_king and sq == (in_check_king[0], in_check_king[1]):\n                    bg = BG_CHECK\n                elif (i + j) % 2 == 0:\n                    bg = BG_LIGHT\n                else:\n                    bg = BG_DARK\n\n                if line_idx == mid_line:\n                    # Centre line: show piece symbol centred in SQ_W chars\n                    piece = getPieceSymbol(p)\n                    txt = TXT_WHITE_PIECE if p > 0 else (TXT_BLACK_PIECE if p < 0 else "")\n                    # pad symmetrically: half on each side\n                    side = (SQ_W - 1) // 2   # chars of padding either side of 1-char piece\n                    cell = bg + txt + " " * side + piece + " " * side + RESET\n                else:\n                    # Blank filler line\n                    cell = bg + " " * SQ_W + RESET\n\n                row_str += cell\n\n            row_str += right_label\n            print(row_str)\n\n    print(P + C_GOLD + DIM + " " * label_w + f"╚{top_rule}╝" + RESET)\n    print(C_GOLD + DIM + file_label_row() + RESET)\n    print()\n\n# ─── Move validation ────────────────────────────────────────────────────────────\ndef isPathClear(r1, c1, r2, c2, b):\n    dr = (r2 > r1) - (r2 < r1)\n    dc = (c2 > c1) - (c2 < c1)\n    r, c = r1 + dr, c1 + dc\n    while r != r2 or c != c2:\n        if b[r][c] != 0: return False\n        r += dr; c += dc\n    return True\n\ndef isValidMove(r1, c1, r2, c2, turn, b):\n    if not all(0 <= value < SIZE for value in (r1, c1, r2, c2)):\n        return False\n    if (r1, c1) == (r2, c2):\n        return False\n    p = b[r1][c1]; t = b[r2][c2]\n    if p == 0 or p * turn < 0 or t * turn > 0 or abs(t) == 6: return False\n    dr, dc = r2 - r1, c2 - c1\n    ar, ac = abs(dr), abs(dc)\n    piece  = abs(p)\n\n    if piece == 1:\n        dir = -1 if p > 0 else 1\n        if dc == 0 and dr == dir     and t == 0: return True\n        if dc == 0 and dr == 2 * dir and t == 0:\n            if (p > 0 and r1 == 6) or (p < 0 and r1 == 1):\n                return isPathClear(r1, c1, r2, c2, b)\n        if ac == 1 and dr == dir and t != 0: return True\n        if ac == 1 and dr == dir and t == 0 and (r2, c2) == en_passant_target:\n            return b[r1][c2] == -turn\n        return False\n    elif piece == 2: return (dr == 0 or dc == 0) and isPathClear(r1, c1, r2, c2, b)\n    elif piece == 3: return (ar == 2 and ac == 1) or (ar == 1 and ac == 2)\n    elif piece == 4: return ar == ac and isPathClear(r1, c1, r2, c2, b)\n    elif piece == 5: return ((dr == 0 or dc == 0) or ar == ac) and isPathClear(r1, c1, r2, c2, b)\n    elif piece == 6:\n        if ar <= 1 and ac <= 1: return True\n        if dr != 0 or ac != 2 or r1 != (7 if turn == 1 else 0) or c1 != 4:\n            return False\n        side = "K" if turn == 1 else "k"\n        if c2 == 2:\n            side = "Q" if turn == 1 else "q"\n            rook_col, between = 0, (1, 2, 3)\n        elif c2 == 6:\n            rook_col, between = 7, (5, 6)\n        else:\n            return False\n        if not castling_rights[side] or b[r1][rook_col] != 2 * turn:\n            return False\n        if any(b[r1][col] != 0 for col in between) or isKingInCheck(turn, b):\n            return False\n        transit = copyBoard(b)\n        transit[r1][4] = 0\n        transit[r1][5 if c2 == 6 else 3] = 6 * turn\n        return not isKingInCheck(turn, transit)\n    return False\n\ndef makeMove(r1, c1, r2, c2, b, update_state=False):\n    global en_passant_target\n    piece = b[r1][c1]\n    captured_piece = b[r2][c2]\n    previous_target = en_passant_target\n    is_en_passant = (\n        abs(piece) == 1 and c1 != c2 and b[r2][c2] == 0\n        and (r2, c2) == previous_target\n    )\n    is_castling = abs(piece) == 6 and abs(c2 - c1) == 2\n    b[r2][c2] = piece\n    b[r1][c1] = 0\n    if is_en_passant:\n        b[r1][c2] = 0\n    if is_castling:\n        rook_from, rook_to = (7, 5) if c2 == 6 else (0, 3)\n        b[r1][rook_to] = b[r1][rook_from]\n        b[r1][rook_from] = 0\n    if update_state:\n        if abs(piece) == 6:\n            castling_rights["K" if piece > 0 else "k"] = False\n            castling_rights["Q" if piece > 0 else "q"] = False\n        if abs(piece) == 2:\n            if (r1, c1) == (7, 0): castling_rights["Q"] = False\n            if (r1, c1) == (7, 7): castling_rights["K"] = False\n            if (r1, c1) == (0, 0): castling_rights["q"] = False\n            if (r1, c1) == (0, 7): castling_rights["k"] = False\n        captured_square = (r1, c2) if is_en_passant else (r2, c2)\n        if abs(captured_piece) == 2:\n            if captured_square == (7, 0): castling_rights["Q"] = False\n            if captured_square == (7, 7): castling_rights["K"] = False\n            if captured_square == (0, 0): castling_rights["q"] = False\n            if captured_square == (0, 7): castling_rights["k"] = False\n        en_passant_target = ((r1 + r2) // 2, c1) if abs(piece) == 1 and abs(r2 - r1) == 2 else None\n\ndef getValidMoves(r1, c1, turn, b):\n    moves = []\n    for r2 in range(SIZE):\n        for c2 in range(SIZE):\n            if isValidMove(r1, c1, r2, c2, turn, b):\n                temp = copyBoard(b)\n                makeMove(r1, c1, r2, c2, temp)\n                if not isKingInCheck(turn, temp):\n                    moves.append((r1, c1, r2, c2))\n    return moves\n\ndef isKingInCheck(turn, b):\n    king = findKingPos(turn, b)\n    if king is None:\n        return True\n    king_r, king_c = king\n    for r in range(SIZE):\n        for c in range(SIZE):\n            piece = b[r][c]\n            if piece * turn >= 0:\n                continue\n            dr, dc = king_r - r, king_c - c\n            ar, ac = abs(dr), abs(dc)\n            kind = abs(piece)\n            if kind == 1 and dr == (1 if piece < 0 else -1) and ac == 1:\n                return True\n            if kind == 3 and (ar, ac) in ((2, 1), (1, 2)):\n                return True\n            if kind == 6 and max(ar, ac) == 1:\n                return True\n            if kind == 2 and (dr == 0 or dc == 0) and isPathClear(r, c, king_r, king_c, b):\n                return True\n            if kind == 4 and ar == ac and isPathClear(r, c, king_r, king_c, b):\n                return True\n            if kind == 5 and (dr == 0 or dc == 0 or ar == ac) and isPathClear(r, c, king_r, king_c, b):\n                return True\n    return False\n\ndef findKingPos(turn, b):\n    kingVal = 6 if turn == 1 else -6\n    for i in range(SIZE):\n        for j in range(SIZE):\n            if b[i][j] == kingVal: return (i, j)\n    return None\n\ndef isCheckmate(turn):\n    if not isKingInCheck(turn, board): return False\n    for r1 in range(SIZE):\n        for c1 in range(SIZE):\n            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):\n                if getValidMoves(r1, c1, turn, board): return False\n    return True\n\ndef isStalemate(turn):\n    if isKingInCheck(turn, board): return False\n    for r1 in range(SIZE):\n        for c1 in range(SIZE):\n            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):\n                if getValidMoves(r1, c1, turn, board): return False\n    return True\n\n# ─── Input parsing ─────────────────────────────────────────────────────────────\ndef parseInput(move):\n    match = re.fullmatch(r"([a-h][1-8])(?:([a-h][1-8]))?", move.strip(), re.IGNORECASE)\n    if match is None:\n        return None\n    start, destination = match.groups()\n    r1, c1 = 8 - int(start[1]), ord(start[0].lower()) - ord("a")\n    if destination is None:\n        return r1, c1, None, None\n    r2, c2 = 8 - int(destination[1]), ord(destination[0].lower()) - ord("a")\n    return r1, c1, r2, c2\n\n# ─── Pawn promotion ────────────────────────────────────────────────────────────\ndef promotePawn(r, c, turn):\n    opts = {"q": 5, "r": 2, "b": 4, "n": 3}\n    while True:\n        choice = input(\n            C_GOLD + "  Promote pawn → " + RESET +\n            "[q]ueen  [r]ook  [b]ishop  [n]ight: "\n        ).strip().lower()\n        if choice in opts:\n            board[r][c] = opts[choice] * turn\n            return\n\n# ═══════════════════════════════════════════════════════════════════════════════\n#  MAIN GAME LOOP\n# ═══════════════════════════════════════════════════════════════════════════════\ndef statusBar(turn, in_check):\n    player  = C_WHITE + BOLD + "WHITE ♔" + RESET if turn == 1 else TXT_BLACK_PIECE + BOLD + "BLACK ♚" + RESET\n    check_w = "  " + C_RED + BOLD + "⚠  KING IN CHECK!" + RESET if in_check else ""\n    print(f"  {player}'s turn{check_w}")\n\ndef printCaptured(captured_w, captured_b):\n    _, cols = get_terminal_size()\n    pad = " " * max(0, (cols - 60) // 2)\n\n    def fmt_white(pieces):\n        return TXT_BLACK_PIECE + "  ".join(BLACK_SYMBOLS.get(abs(p), "?") for p in sorted(pieces, key=lambda x: -abs(x))) + RESET\n\n    def fmt_black(pieces):\n        return TXT_WHITE_PIECE + "  ".join(WHITE_SYMBOLS.get(abs(p), "?") for p in sorted(pieces, key=lambda x: -abs(x))) + RESET\n\n    if captured_w:\n        print(pad + C_DIM + "  White captured: " + RESET + fmt_white(captured_w))\n    if captured_b:\n        print(pad + C_DIM + "  Black captured: " + RESET + fmt_black(captured_b))\n    if captured_w or captured_b:\n        print()\n\ndef main():\n    fade_in_title()\n\n    turn        = 1\n    selected_sq = None\n    valid_moves = []\n    last_from   = None\n    last_to     = None\n    captured_w  = []\n    captured_b  = []\n\n    initBoard()\n\n    while True:\n        clear()\n\n        in_check = isKingInCheck(turn, board)\n        king_pos = findKingPos(turn, board) if in_check else None\n\n        printBoard(\n            selected      = selected_sq,\n            valid_moves   = valid_moves,\n            last_from     = last_from,\n            last_to       = last_to,\n            in_check_king = king_pos,\n        )\n\n        printCaptured(captured_w, captured_b)\n        statusBar(turn, in_check)\n\n        if isCheckmate(turn):\n            winner = "White" if turn == -1 else "Black"\n            print(C_RED + BOLD + f"\n  ✦ CHECKMATE — {winner.upper()} WINS ✦\n" + RESET)\n            time.sleep(1.5)\n            winner_animation(winner)\n            break\n\n        if isStalemate(turn):\n            print(C_YELLOW + BOLD + "\n  ✦ STALEMATE — IT'S A DRAW ✦\n" + RESET)\n            time.sleep(1.5)\n            stalemate_animation()\n            break\n\n        hint = (\n            C_DIM + "  (select: e2 · move: e2e4 · deselect: same square · quit: q)" + RESET\n            if not selected_sq else\n            C_GOLD + f"  ✦ {chr(ord('a')+selected_sq[1]).upper()}{8-selected_sq[0]} selected — enter destination (or same to deselect)" + RESET\n        )\n        print(hint)\n\n        move_str = input(C_DIM + "\n  › " + RESET).strip()\n\n        if move_str.lower() == 'q':\n            print(C_DIM + "\n  Goodbye.\n" + RESET)\n            break\n\n        parsed = parseInput(move_str)\n\n        if not parsed:\n            input(C_RED + "  ✗ Invalid format. Press Enter…" + RESET)\n            continue\n\n        r1, c1, r2, c2 = parsed\n\n        if r2 is None:\n            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):\n                if selected_sq and selected_sq == (r1, c1):\n                    selected_sq = None; valid_moves = []\n                else:\n                    selected_sq = (r1, c1)\n                    valid_moves = getValidMoves(r1, c1, turn, board)\n            else:\n                input(C_RED + "  ✗ No friendly piece there. Press Enter…" + RESET)\n            continue\n\n        if selected_sq is None:\n            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):\n                selected_sq = (r1, c1)\n                valid_moves = getValidMoves(r1, c1, turn, board)\n            else:\n                input(C_RED + "  ✗ No friendly piece there. Press Enter…" + RESET)\n            continue\n\n        sr, sc = selected_sq\n\n        if (r1, c1) != (sr, sc):\n            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):\n                selected_sq = (r1, c1)\n                valid_moves = getValidMoves(r1, c1, turn, board)\n                continue\n            r2, c2 = r1, c1\n            r1, c1 = sr, sc\n\n        if not isValidMove(r1, c1, r2, c2, turn, board):\n            input(C_RED + "  ✗ Invalid move. Press Enter…" + RESET)\n            continue\n\n        temp = copyBoard(board)\n        makeMove(r1, c1, r2, c2, temp)\n        if isKingInCheck(turn, temp):\n            input(C_RED + "  ✗ That move leaves your king in check! Press Enter…" + RESET)\n            continue\n\n        captured = board[r2][c2]\n        if abs(board[r1][c1]) == 1 and c1 != c2 and captured == 0:\n            captured = board[r1][c2]\n        makeMove(r1, c1, r2, c2, board, update_state=True)\n\n        if captured != 0:\n            if turn == 1: captured_w.append(captured)\n            else:         captured_b.append(captured)\n\n        if abs(board[r2][c2]) == 1 and (r2 == 0 or r2 == 7):\n            promotePawn(r2, c2, turn)\n\n        last_from   = (r1, c1)\n        last_to     = (r2, c2)\n        selected_sq = None\n        valid_moves = []\n        turn        = -turn\n\nif __name__ == "__main__":\n    parser = argparse.ArgumentParser(description="Play a two-player chess game in your terminal.")\n    parser.add_argument("--no-animation", action="store_true", help="skip the animated title and end screens")\n    SKIP_ANIMATIONS = parser.parse_args().no_animation\n    main()\n\n\n
+import argparse
+import os
+import re
+import time
+import sys
+import random
+import math
+
+SIZE = 8
+
+# ─── ANSI COLORS ───────────────────────────────────────────────────────────────
+RESET   = "\033[0m"
+BOLD    = "\033[1m"
+DIM     = "\033[2m"
+
+BG_DARK      = "\033[48;2;101;67;33m"
+BG_LIGHT     = "\033[48;2;222;184;135m"
+BG_SELECTED  = "\033[48;2;240;200;50m"
+BG_VALID     = "\033[48;2;120;180;80m"
+BG_LASTMOVE  = "\033[48;2;170;210;100m"
+BG_CHECK     = "\033[48;2;200;50;50m"
+BG_CAPTURE   = "\033[48;2;200;100;50m"
+
+TXT_WHITE_PIECE = "\033[1;38;2;255;255;255m"
+TXT_BLACK_PIECE = "\033[1;38;2;28;14;4m"
+
+C_GOLD   = "\033[38;2;212;175;55m"
+C_WHITE  = "\033[97m"
+C_DIM    = "\033[2;37m"
+C_RED    = "\033[1;31m"
+C_GREEN  = "\033[1;32m"
+C_YELLOW = "\033[1;33m"
+C_CYAN   = "\033[1;36m"
+C_MAGENTA= "\033[1;35m"
+C_BLUE   = "\033[1;34m"
+
+FIREWORK_COLORS = [C_RED, C_YELLOW, C_GREEN, C_CYAN, C_MAGENTA, C_BLUE, C_WHITE]
+SPARKS = ['*', '+', '·', '✦', '✸', '✺', '❋', '✻', '★', '•', '◆', '▪']
+
+board = [[0]*SIZE for _ in range(SIZE)]
+castling_rights = {"K": True, "Q": True, "k": True, "q": True}
+en_passant_target = None
+SKIP_ANIMATIONS = False
+
+WHITE_SYMBOLS = {1:"♙", 2:"♖", 3:"♘", 4:"♗", 5:"♕", 6:"♔"}
+BLACK_SYMBOLS = {1:"♟", 2:"♜", 3:"♞", 4:"♝", 5:"♛", 6:"♚"}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BOARD SIZING  ← increase these to make squares bigger
+# ═══════════════════════════════════════════════════════════════════════════════
+SQ_W = 7    # total width  of each square in characters (must be odd for centring)
+SQ_H = 3    # total height of each square in lines      (must be odd for centring)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+def clear(): os.system("cls" if os.name == "nt" else "clear")
+
+def hide_cursor(): sys.stdout.write("\033[?25l"); sys.stdout.flush()
+def show_cursor(): sys.stdout.write("\033[?25h"); sys.stdout.flush()
+
+def move_cursor(row, col):
+    sys.stdout.write(f"\033[{row};{col}H")
+    sys.stdout.flush()
+
+def print_at(row, col, text):
+    move_cursor(row, col)
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+def typewrite(text, delay=0.03, color=""):
+    for ch in text:
+        sys.stdout.write(color + ch + RESET)
+        sys.stdout.flush()
+        time.sleep(delay)
+
+def get_terminal_size():
+    try:
+        size = os.get_terminal_size()
+        return size.lines, size.columns
+    except:
+        return 50, 100
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  WELCOME ANIMATION
+# ═══════════════════════════════════════════════════════════════════════════════
+TITLE_ART = r"""\n   ██████╗██╗  ██╗███████╗███████╗███████╗\n  ██╔════╝██║  ██║██╔════╝██╔════╝██╔════╝\n  ██║     ███████║█████╗  ███████╗███████╗\n  ██║     ██╔══██║██╔══╝  ╚════██║╚════██║\n  ╚██████╗██║  ██║███████╗███████║███████║\n   ╚═════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝\n"""
+
+CHESS_PIECES_ART = [
+    "    ♚  ♛  ♜  ♝  ♞  ♟    ",
+    "    ♔  ♕  ♖  ♗  ♘  ♙    ",
+]
+
+def fade_in_title():
+    if SKIP_ANIMATIONS:
+        clear()
+        print(C_GOLD + BOLD + "CHESS" + RESET)
+        print(C_DIM + "The classic game of strategy" + RESET)
+        input(C_GOLD + "\nPress Enter to begin" + RESET)
+        return
+    lines = TITLE_ART.strip('\n').split('\n')
+    rows, cols = get_terminal_size()
+    start_col = max(1, (cols - 42) // 2)
+    start_row = max(1, (rows - 18) // 2)
+
+    hide_cursor()
+    clear()
+
+    for i, line in enumerate(lines):
+        print_at(start_row + i, start_col, C_DIM + line + RESET)
+    time.sleep(0.3)
+
+    gold_codes = [
+        "\033[38;2;100;80;20m",
+        "\033[38;2;150;120;30m",
+        "\033[38;2;190;155;40m",
+        "\033[38;2;212;175;55m",
+        "\033[38;2;240;210;100m",
+        "\033[38;2;255;240;160m",
+        "\033[38;2;212;175;55m",
+    ]
+
+    max_len = max(len(l) for l in lines)
+    for col_offset in range(max_len + len(gold_codes)):
+        for i, line in enumerate(lines):
+            row_out = []
+            for ci, ch in enumerate(line):
+                dist = col_offset - ci
+                if 0 <= dist < len(gold_codes):
+                    row_out.append(gold_codes[dist] + BOLD + ch + RESET)
+                elif dist >= len(gold_codes):
+                    row_out.append(C_GOLD + BOLD + ch + RESET)
+                else:
+                    row_out.append(C_DIM + ch + RESET)
+            print_at(start_row + i, start_col, ''.join(row_out))
+        time.sleep(0.018)
+
+    piece_row = start_row + len(lines) + 1
+    print_at(piece_row, start_col + 8, C_DIM + CHESS_PIECES_ART[1] + RESET)
+    time.sleep(0.2)
+
+    pieces = [("♔","♚"), ("♕","♛"), ("♖","♜"), ("♗","♝"), ("♘","♞"), ("♙","♟")]
+    base_col = start_col + 11
+    for idx, (wp, bp) in enumerate(pieces):
+        col = base_col + idx * 3
+        print_at(piece_row,     col, TXT_WHITE_PIECE + BOLD + wp + RESET)
+        print_at(piece_row + 1, col, TXT_BLACK_PIECE + BOLD + bp + RESET)
+        time.sleep(0.08)
+
+    time.sleep(0.4)
+
+    tagline = "— The Classic Game of Strategy —"
+    trow = piece_row + 3
+    tcol = max(1, (cols - len(tagline)) // 2)
+    print_at(trow, tcol, "")
+    typewrite(tagline, delay=0.04, color=C_DIM)
+
+    div = "─" * 44
+    drow = trow + 2
+    dcol = max(1, (cols - 44) // 2)
+    print_at(drow, dcol, C_GOLD + DIM + div + RESET)
+
+    time.sleep(0.3)
+    prompt_row = drow + 2
+    pcol = max(1, (cols - 28) // 2)
+    print_at(prompt_row, pcol, "")
+
+    for _ in range(6):
+        print_at(prompt_row, pcol, C_GOLD + "  Press  Enter  to  Begin  " + RESET)
+        time.sleep(0.4)
+        print_at(prompt_row, pcol, " " * 28)
+        time.sleep(0.3)
+
+    print_at(prompt_row, pcol, C_GOLD + "  Press  Enter  to  Begin  " + RESET)
+    print_at(prompt_row + 2, 1, "")
+    show_cursor()
+    input()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  FIREWORKS ANIMATION
+# ═══════════════════════════════════════════════════════════════════════════════
+class Particle:
+    def __init__(self, x, y, vx, vy, color, char, lifetime):
+        self.x  = x;  self.y  = y
+        self.vx = vx; self.vy = vy
+        self.color    = color
+        self.char     = char
+        self.lifetime = lifetime
+        self.age      = 0
+        self.px = x;  self.py = y
+
+    def update(self):
+        self.px, self.py = self.x, self.y
+        self.x  += self.vx
+        self.y  += self.vy * 0.5
+        self.vy += 0.25
+        self.vx *= 0.96
+        self.age += 1
+
+    def alive(self):
+        return self.age < self.lifetime
+
+    def brightness(self):
+        ratio = 1 - self.age / self.lifetime
+        if ratio > 0.7:   return BOLD
+        elif ratio > 0.4: return ""
+        else:             return DIM
+
+def launch_firework(cx, cy, rows, cols):
+    particles = []
+    count = random.randint(20, 32)
+    color = random.choice(FIREWORK_COLORS)
+    color2 = random.choice(FIREWORK_COLORS)
+    for i in range(count):
+        angle = 2 * math.pi * i / count + random.uniform(-0.2, 0.2)
+        speed = random.uniform(1.2, 3.0)
+        vx = math.cos(angle) * speed
+        vy = math.sin(angle) * speed
+        ch = random.choice(SPARKS)
+        life = random.randint(8, 14)
+        c = color if i % 2 == 0 else color2
+        particles.append(Particle(cx, cy, vx, vy, c, ch, life))
+    return particles
+
+def winner_animation(winner_name):
+    if SKIP_ANIMATIONS:
+        show_cursor()
+        print(f"\n{winner_name} wins by checkmate.")
+        return
+    hide_cursor()
+    rows, cols = get_terminal_size()
+
+    for color in [C_YELLOW, C_WHITE, C_GOLD, ""]:
+        clear()
+        if color:
+            for r in range(rows):
+                print(color + " " * cols + RESET)
+        time.sleep(0.06)
+
+    clear()
+
+    all_particles = []
+    launch_positions = [
+        (cols // 4,     rows // 4),
+        (3 * cols // 4, rows // 4),
+        (cols // 2,     rows // 5),
+        (cols // 3,     rows // 3),
+        (2 * cols // 3, rows // 3),
+    ]
+    launch_times = [0, 4, 8, 12, 16]
+    frame = 0
+    total_frames = 45
+
+    while frame < total_frames:
+        for i, lt in enumerate(launch_times):
+            if frame == lt and i < len(launch_positions):
+                cx, cy = launch_positions[i]
+                all_particles.extend(launch_firework(cx, cy, rows, cols))
+
+        if frame > 10 and frame % 7 == 0:
+            cx = random.randint(cols // 6, 5 * cols // 6)
+            cy = random.randint(rows // 6, rows // 2)
+            all_particles.extend(launch_firework(cx, cy, rows, cols))
+
+        for p in all_particles:
+            px, py = int(round(p.px)), int(round(p.py))
+            if 1 <= py <= rows and 1 <= px <= cols:
+                print_at(py, px, " ")
+
+        new_particles = []
+        for p in all_particles:
+            p.update()
+            if p.alive():
+                px, py = int(round(p.x)), int(round(p.y))
+                if 1 <= py <= rows - 4 and 1 <= px <= cols:
+                    print_at(py, px, p.brightness() + p.color + p.char + RESET)
+                new_particles.append(p)
+
+        all_particles = new_particles
+
+        if frame >= 6:
+            _draw_winner_text(rows, cols, winner_name, frame)
+
+        sys.stdout.flush()
+        time.sleep(0.07)
+        frame += 1
+
+    clear()
+    _draw_winner_text(rows, cols, winner_name, 99)
+    print_at(rows - 2, 1, "")
+    show_cursor()
+    input(C_DIM + "\n  Press Enter to exit..." + RESET)
+
+def _draw_winner_text(rows, cols, winner_name, frame):
+    checkmate_art = [
+        "  ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███╗   ███╗ █████╗ ████████╗███████╗  ",
+        " ██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝████╗ ████║██╔══██╗╚══██╔══╝██╔════╝  ",
+        " ██║     ███████║█████╗  ██║     █████╔╝ ██╔████╔██║███████║   ██║   █████╗    ",
+        " ██║     ██╔══██║██╔══╝  ██║     ██╔═██╗ ██║╚██╔╝██║██╔══██║   ██║   ██╔══╝    ",
+        " ╚██████╗██║  ██║███████╗╚██████╗██║  ██╗██║ ╚═╝ ██║██║  ██║   ██║   ███████╗  ",
+        "  ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚══════╝  ",
+    ]
+    art_w     = max(len(l) for l in checkmate_art)
+    start_col = max(1, (cols - art_w) // 2)
+    mid_row   = rows // 2 - 5
+    golds = [
+        "\033[38;2;212;175;55m",
+        "\033[38;2;240;200;80m",
+        "\033[38;2;255;230;120m",
+        "\033[38;2;200;160;40m",
+    ]
+    g = golds[frame % len(golds)]
+    for i, line in enumerate(checkmate_art):
+        print_at(mid_row + i, start_col, g + BOLD + line + RESET)
+    win_text = f"♚  {winner_name.upper()} WINS  ♔"
+    wt_col   = max(1, (cols - len(win_text)) // 2)
+    print_at(mid_row + len(checkmate_art) + 2, wt_col, C_WHITE + BOLD + win_text + RESET)
+    sep = "·  " * 14
+    sc  = max(1, (cols - len(sep)) // 2)
+    print_at(mid_row + len(checkmate_art) + 4, sc, C_GOLD + DIM + sep + RESET)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  STALEMATE ANIMATION
+# ═══════════════════════════════════════════════════════════════════════════════
+def stalemate_animation():
+    if SKIP_ANIMATIONS:
+        show_cursor()
+        print("\nDraw by stalemate.")
+        return
+    hide_cursor()
+    rows, cols = get_terminal_size()
+    clear()
+
+    sub  = "The game is a draw"
+    art = [
+        " _____ _        _                     _       ",
+        "/  ___| |      | |                   | |      ",
+        r"\\ `--. | |_ __ | | ___ _ __ ___   __ _| |_ ___",
+        r" `--. \| __/ _` | |/ _ \ '_ ` _ \ / _` | __/ _ |",
+        r"/\__/ / || (_| | |  __/ | | | | | (_| | ||  __/",
+        r"\____/ \__\__,_|_|\___|_| |_| |_|\__,_|\__\___|",
+    ]
+
+    for frame in range(40):
+        offset  = max(0, 10 - frame)
+        mid_row = rows // 2 - 5
+        for i, line in enumerate(art):
+            sc    = max(1, (cols - len(line)) // 2)
+            alpha = min(1.0, (frame - i * 1.5) / 8)
+            if alpha <= 0:   continue
+            elif alpha < 0.4: color = C_DIM
+            elif alpha < 0.8: color = "\033[38;2;150;150;150m"
+            else:             color = "\033[38;2;200;200;200m" + BOLD
+            print_at(mid_row + i - offset, sc, color + line + RESET)
+
+        if frame > 15:
+            pc = max(1, (cols - 5) // 2)
+            if (frame // 4) % 2 == 0:
+                print_at(mid_row + len(art) + 2, pc,
+                         C_WHITE + BOLD + "♔" + RESET + "  " + TXT_BLACK_PIECE + BOLD + "♚" + RESET)
+            else:
+                print_at(mid_row + len(art) + 2, pc,
+                         C_DIM   + BOLD + "♔" + RESET + "  " + C_DIM + BOLD + "♚" + RESET)
+        if frame > 20:
+            sc2 = max(1, (cols - len(sub)) // 2)
+            print_at(mid_row + len(art) + 4, sc2, C_DIM + sub + RESET)
+
+        sys.stdout.flush()
+        time.sleep(0.07)
+
+    print_at(rows - 2, 1, "")
+    show_cursor()
+    input(C_DIM + "\n  Press Enter to exit..." + RESET)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BOARD / GAME LOGIC
+# ═══════════════════════════════════════════════════════════════════════════════
+def initBoard():
+    global en_passant_target
+    castling_rights.update({"K": True, "Q": True, "k": True, "q": True})
+    en_passant_target = None
+    back = [2,3,4,5,6,4,3,2]
+    for i in range(SIZE):
+        for j in range(SIZE):
+            if   i == 0: board[i][j] = -back[j]
+            elif i == 1: board[i][j] = -1
+            elif i == 6: board[i][j] =  1
+            elif i == 7: board[i][j] =  back[j]
+            else:         board[i][j] =  0
+
+def copyBoard(src):
+    return [row[:] for row in src]
+
+def getPieceSymbol(p):
+    if p > 0: return WHITE_SYMBOLS.get(p, " ")
+    if p < 0: return BLACK_SYMBOLS.get(-p, " ")
+    return " "
+
+# ─── Larger board renderer ─────────────────────────────────────────────────────
+def printBoard(selected=None, valid_moves=None, last_from=None, last_to=None, in_check_king=None):
+    valid_set   = set((r2, c2) for _, _, r2, c2 in (valid_moves or []))
+    capture_set = set()
+    if valid_moves:
+        for _, _, r2, c2 in valid_moves:
+            if board[r2][c2] != 0:
+                capture_set.add((r2, c2))
+
+    _, cols = get_terminal_size()
+
+    board_w = SIZE * SQ_W
+    label_w = 4          # " 8  " rank label
+    total_w = label_w + board_w + 2
+    pad     = max(0, (cols - total_w) // 2)
+    P       = " " * pad
+
+    # File labels — each centred in SQ_W chars
+    def file_label_row():
+        return P + " " * label_w + "".join(f"{c:^{SQ_W}}" for c in "ABCDEFGH")
+
+    top_rule = "─" * board_w
+
+    print()
+    print(C_GOLD + DIM + file_label_row() + RESET)
+    print(P + C_GOLD + DIM + " " * label_w + f"╔{top_rule}╗" + RESET)
+
+    for i in range(SIZE):
+        rank = str(8 - i)
+
+        # Build the SQ_H lines for this rank
+        for line_idx in range(SQ_H):
+            mid_line = (SQ_H // 2)  # centre line gets the piece
+
+            if line_idx == mid_line:
+                left_label  = C_GOLD + DIM + f" {rank:<2} ║" + RESET
+                right_label = C_GOLD + DIM + f"║ {rank}" + RESET
+            else:
+                left_label  = C_GOLD + DIM + "    ║" + RESET
+                right_label = C_GOLD + DIM + "║" + RESET
+
+            row_str = P + left_label
+
+            for j in range(SIZE):
+                sq = (i, j)
+                p  = board[i][j]
+
+                # Choose background
+                if selected and sq == (selected[0], selected[1]):
+                    bg = BG_SELECTED
+                elif sq in capture_set:
+                    bg = BG_CAPTURE
+                elif sq in valid_set:
+                    bg = BG_VALID
+                elif last_from and sq == (last_from[0], last_from[1]):
+                    bg = BG_LASTMOVE
+                elif last_to and sq == (last_to[0], last_to[1]):
+                    bg = BG_LASTMOVE
+                elif in_check_king and sq == (in_check_king[0], in_check_king[1]):
+                    bg = BG_CHECK
+                elif (i + j) % 2 == 0:
+                    bg = BG_LIGHT
+                else:
+                    bg = BG_DARK
+
+                if line_idx == mid_line:
+                    # Centre line: show piece symbol centred in SQ_W chars
+                    piece = getPieceSymbol(p)
+                    txt = TXT_WHITE_PIECE if p > 0 else (TXT_BLACK_PIECE if p < 0 else "")
+                    # pad symmetrically: half on each side
+                    side = (SQ_W - 1) // 2   # chars of padding either side of 1-char piece
+                    cell = bg + txt + " " * side + piece + " " * side + RESET
+                else:
+                    # Blank filler line
+                    cell = bg + " " * SQ_W + RESET
+
+                row_str += cell
+
+            row_str += right_label
+            print(row_str)
+
+    print(P + C_GOLD + DIM + " " * label_w + f"╚{top_rule}╝" + RESET)
+    print(C_GOLD + DIM + file_label_row() + RESET)
+    print()
+
+# ─── Move validation ────────────────────────────────────────────────────────────
+def isPathClear(r1, c1, r2, c2, b):
+    dr = (r2 > r1) - (r2 < r1)
+    dc = (c2 > c1) - (c2 < c1)
+    r, c = r1 + dr, c1 + dc
+    while r != r2 or c != c2:
+        if b[r][c] != 0: return False
+        r += dr; c += dc
+    return True
+
+def isValidMove(r1, c1, r2, c2, turn, b):
+    if not all(0 <= value < SIZE for value in (r1, c1, r2, c2)):
+        return False
+    if (r1, c1) == (r2, c2):
+        return False
+    p = b[r1][c1]; t = b[r2][c2]
+    if p == 0 or p * turn < 0 or t * turn > 0 or abs(t) == 6: return False
+    dr, dc = r2 - r1, c2 - c1
+    ar, ac = abs(dr), abs(dc)
+    piece  = abs(p)
+
+    if piece == 1:
+        dir = -1 if p > 0 else 1
+        if dc == 0 and dr == dir     and t == 0: return True
+        if dc == 0 and dr == 2 * dir and t == 0:
+            if (p > 0 and r1 == 6) or (p < 0 and r1 == 1):
+                return isPathClear(r1, c1, r2, c2, b)
+        if ac == 1 and dr == dir and t != 0: return True
+        if ac == 1 and dr == dir and t == 0 and (r2, c2) == en_passant_target:
+            return b[r1][c2] == -turn
+        return False
+    elif piece == 2: return (dr == 0 or dc == 0) and isPathClear(r1, c1, r2, c2, b)
+    elif piece == 3: return (ar == 2 and ac == 1) or (ar == 1 and ac == 2)
+    elif piece == 4: return ar == ac and isPathClear(r1, c1, r2, c2, b)
+    elif piece == 5: return ((dr == 0 or dc == 0) or ar == ac) and isPathClear(r1, c1, r2, c2, b)
+    elif piece == 6:
+        if ar <= 1 and ac <= 1: return True
+        if dr != 0 or ac != 2 or r1 != (7 if turn == 1 else 0) or c1 != 4:
+            return False
+        side = "K" if turn == 1 else "k"
+        if c2 == 2:
+            side = "Q" if turn == 1 else "q"
+            rook_col, between = 0, (1, 2, 3)
+        elif c2 == 6:
+            rook_col, between = 7, (5, 6)
+        else:
+            return False
+        if not castling_rights[side] or b[r1][rook_col] != 2 * turn:
+            return False
+        if any(b[r1][col] != 0 for col in between) or isKingInCheck(turn, b):
+            return False
+        transit = copyBoard(b)
+        transit[r1][4] = 0
+        transit[r1][5 if c2 == 6 else 3] = 6 * turn
+        return not isKingInCheck(turn, transit)
+    return False
+
+def makeMove(r1, c1, r2, c2, b, update_state=False):
+    global en_passant_target
+    piece = b[r1][c1]
+    captured_piece = b[r2][c2]
+    previous_target = en_passant_target
+    is_en_passant = (
+        abs(piece) == 1 and c1 != c2 and b[r2][c2] == 0
+        and (r2, c2) == previous_target
+    )
+    is_castling = abs(piece) == 6 and abs(c2 - c1) == 2
+    b[r2][c2] = piece
+    b[r1][c1] = 0
+    if is_en_passant:
+        b[r1][c2] = 0
+    if is_castling:
+        rook_from, rook_to = (7, 5) if c2 == 6 else (0, 3)
+        b[r1][rook_to] = b[r1][rook_from]
+        b[r1][rook_from] = 0
+    if update_state:
+        if abs(piece) == 6:
+            castling_rights["K" if piece > 0 else "k"] = False
+            castling_rights["Q" if piece > 0 else "q"] = False
+        if abs(piece) == 2:
+            if (r1, c1) == (7, 0): castling_rights["Q"] = False
+            if (r1, c1) == (7, 7): castling_rights["K"] = False
+            if (r1, c1) == (0, 0): castling_rights["q"] = False
+            if (r1, c1) == (0, 7): castling_rights["k"] = False
+        captured_square = (r1, c2) if is_en_passant else (r2, c2)
+        if abs(captured_piece) == 2:
+            if captured_square == (7, 0): castling_rights["Q"] = False
+            if captured_square == (7, 7): castling_rights["K"] = False
+            if captured_square == (0, 0): castling_rights["q"] = False
+            if captured_square == (0, 7): castling_rights["k"] = False
+        en_passant_target = ((r1 + r2) // 2, c1) if abs(piece) == 1 and abs(r2 - r1) == 2 else None
+
+def getValidMoves(r1, c1, turn, b):
+    moves = []
+    for r2 in range(SIZE):
+        for c2 in range(SIZE):
+            if isValidMove(r1, c1, r2, c2, turn, b):
+                temp = copyBoard(b)
+                makeMove(r1, c1, r2, c2, temp)
+                if not isKingInCheck(turn, temp):
+                    moves.append((r1, c1, r2, c2))
+    return moves
+
+def isKingInCheck(turn, b):
+    king = findKingPos(turn, b)
+    if king is None:
+        return True
+    king_r, king_c = king
+    for r in range(SIZE):
+        for c in range(SIZE):
+            piece = b[r][c]
+            if piece * turn >= 0:
+                continue
+            dr, dc = king_r - r, king_c - c
+            ar, ac = abs(dr), abs(dc)
+            kind = abs(piece)
+            if kind == 1 and dr == (1 if piece < 0 else -1) and ac == 1:
+                return True
+            if kind == 3 and (ar, ac) in ((2, 1), (1, 2)):
+                return True
+            if kind == 6 and max(ar, ac) == 1:
+                return True
+            if kind == 2 and (dr == 0 or dc == 0) and isPathClear(r, c, king_r, king_c, b):
+                return True
+            if kind == 4 and ar == ac and isPathClear(r, c, king_r, king_c, b):
+                return True
+            if kind == 5 and (dr == 0 or dc == 0 or ar == ac) and isPathClear(r, c, king_r, king_c, b):
+                return True
+    return False
+
+def findKingPos(turn, b):
+    kingVal = 6 if turn == 1 else -6
+    for i in range(SIZE):
+        for j in range(SIZE):
+            if b[i][j] == kingVal: return (i, j)
+    return None
+
+def isCheckmate(turn):
+    if not isKingInCheck(turn, board): return False
+    for r1 in range(SIZE):
+        for c1 in range(SIZE):
+            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):
+                if getValidMoves(r1, c1, turn, board): return False
+    return True
+
+def isStalemate(turn):
+    if isKingInCheck(turn, board): return False
+    for r1 in range(SIZE):
+        for c1 in range(SIZE):
+            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):
+                if getValidMoves(r1, c1, turn, board): return False
+    return True
+
+# ─── Input parsing ─────────────────────────────────────────────────────────────
+def parseInput(move):
+    match = re.fullmatch(r"([a-h][1-8])(?:([a-h][1-8]))?", move.strip(), re.IGNORECASE)
+    if match is None:
+        return None
+    start, destination = match.groups()
+    r1, c1 = 8 - int(start[1]), ord(start[0].lower()) - ord("a")
+    if destination is None:
+        return r1, c1, None, None
+    r2, c2 = 8 - int(destination[1]), ord(destination[0].lower()) - ord("a")
+    return r1, c1, r2, c2
+
+# ─── Pawn promotion ────────────────────────────────────────────────────────────
+def promotePawn(r, c, turn):
+    opts = {"q": 5, "r": 2, "b": 4, "n": 3}
+    while True:
+        choice = input(
+            C_GOLD + "  Promote pawn → " + RESET +
+            "[q]ueen  [r]ook  [b]ishop  [n]ight: "
+        ).strip().lower()
+        if choice in opts:
+            board[r][c] = opts[choice] * turn
+            return
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MAIN GAME LOOP
+# ═══════════════════════════════════════════════════════════════════════════════
+def statusBar(turn, in_check):
+    player  = C_WHITE + BOLD + "WHITE ♔" + RESET if turn == 1 else TXT_BLACK_PIECE + BOLD + "BLACK ♚" + RESET
+    check_w = "  " + C_RED + BOLD + "⚠  KING IN CHECK!" + RESET if in_check else ""
+    print(f"  {player}'s turn{check_w}")
+
+def printCaptured(captured_w, captured_b):
+    _, cols = get_terminal_size()
+    pad = " " * max(0, (cols - 60) // 2)
+
+    def fmt_white(pieces):
+        return TXT_BLACK_PIECE + "  ".join(BLACK_SYMBOLS.get(abs(p), "?") for p in sorted(pieces, key=lambda x: -abs(x))) + RESET
+
+    def fmt_black(pieces):
+        return TXT_WHITE_PIECE + "  ".join(WHITE_SYMBOLS.get(abs(p), "?") for p in sorted(pieces, key=lambda x: -abs(x))) + RESET
+
+    if captured_w:
+        print(pad + C_DIM + "  White captured: " + RESET + fmt_white(captured_w))
+    if captured_b:
+        print(pad + C_DIM + "  Black captured: " + RESET + fmt_black(captured_b))
+    if captured_w or captured_b:
+        print()
+
+def main():
+    fade_in_title()
+
+    turn        = 1
+    selected_sq = None
+    valid_moves = []
+    last_from   = None
+    last_to     = None
+    captured_w  = []
+    captured_b  = []
+
+    initBoard()
+
+    while True:
+        clear()
+
+        in_check = isKingInCheck(turn, board)
+        king_pos = findKingPos(turn, board) if in_check else None
+
+        printBoard(
+            selected      = selected_sq,
+            valid_moves   = valid_moves,
+            last_from     = last_from,
+            last_to       = last_to,
+            in_check_king = king_pos,
+        )
+
+        printCaptured(captured_w, captured_b)
+        statusBar(turn, in_check)
+
+        if isCheckmate(turn):
+            winner = "White" if turn == -1 else "Black"
+            print(C_RED + BOLD + f"\n  ✦ CHECKMATE — {winner.upper()} WINS ✦\n" + RESET)
+            time.sleep(1.5)
+            winner_animation(winner)
+            break
+
+        if isStalemate(turn):
+            print(C_YELLOW + BOLD + "\n  ✦ STALEMATE — IT'S A DRAW ✦\n" + RESET)
+            time.sleep(1.5)
+            stalemate_animation()
+            break
+
+        hint = (
+            C_DIM + "  (select: e2 · move: e2e4 · deselect: same square · quit: q)" + RESET
+            if not selected_sq else
+            C_GOLD + f"  ✦ {chr(ord('a')+selected_sq[1]).upper()}{8-selected_sq[0]} selected — enter destination (or same to deselect)" + RESET
+        )
+        print(hint)
+
+        move_str = input(C_DIM + "\n  › " + RESET).strip()
+
+        if move_str.lower() == 'q':
+            print(C_DIM + "\n  Goodbye.\n" + RESET)
+            break
+
+        parsed = parseInput(move_str)
+
+        if not parsed:
+            input(C_RED + "  ✗ Invalid format. Press Enter…" + RESET)
+            continue
+
+        r1, c1, r2, c2 = parsed
+
+        if r2 is None:
+            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):
+                if selected_sq and selected_sq == (r1, c1):
+                    selected_sq = None; valid_moves = []
+                else:
+                    selected_sq = (r1, c1)
+                    valid_moves = getValidMoves(r1, c1, turn, board)
+            else:
+                input(C_RED + "  ✗ No friendly piece there. Press Enter…" + RESET)
+            continue
+
+        if selected_sq is None:
+            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):
+                selected_sq = (r1, c1)
+                valid_moves = getValidMoves(r1, c1, turn, board)
+            else:
+                input(C_RED + "  ✗ No friendly piece there. Press Enter…" + RESET)
+            continue
+
+        sr, sc = selected_sq
+
+        if (r1, c1) != (sr, sc):
+            if (turn == 1 and board[r1][c1] > 0) or (turn == -1 and board[r1][c1] < 0):
+                selected_sq = (r1, c1)
+                valid_moves = getValidMoves(r1, c1, turn, board)
+                continue
+            r2, c2 = r1, c1
+            r1, c1 = sr, sc
+
+        if not isValidMove(r1, c1, r2, c2, turn, board):
+            input(C_RED + "  ✗ Invalid move. Press Enter…" + RESET)
+            continue
+
+        temp = copyBoard(board)
+        makeMove(r1, c1, r2, c2, temp)
+        if isKingInCheck(turn, temp):
+            input(C_RED + "  ✗ That move leaves your king in check! Press Enter…" + RESET)
+            continue
+
+        captured = board[r2][c2]
+        if abs(board[r1][c1]) == 1 and c1 != c2 and captured == 0:
+            captured = board[r1][c2]
+        makeMove(r1, c1, r2, c2, board, update_state=True)
+
+        if captured != 0:
+            if turn == 1: captured_w.append(captured)
+            else:         captured_b.append(captured)
+
+        if abs(board[r2][c2]) == 1 and (r2 == 0 or r2 == 7):
+            promotePawn(r2, c2, turn)
+
+        last_from   = (r1, c1)
+        last_to     = (r2, c2)
+        selected_sq = None
+        valid_moves = []
+        turn        = -turn
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Play a two-player chess game in your terminal.")
+    parser.add_argument("--no-animation", action="store_true", help="skip the animated title and end screens")
+    SKIP_ANIMATIONS = parser.parse_args().no_animation
+    main()
+
+
